@@ -3064,7 +3064,8 @@ String getWindowName({WindowType? overrideType}) {
   final name = bind.mainGetAppNameSync();
   switch (overrideType ?? kWindowType) {
     case WindowType.Main:
-      return name;
+    case null: // the main window leaves kWindowType unset
+      return "RustDesk Church"; // church power fork
     case WindowType.FileTransfer:
       return "File Transfer - $name";
     case WindowType.ViewCamera:

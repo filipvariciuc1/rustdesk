@@ -68,7 +68,13 @@ class _PeerCardState extends State<_PeerCard>
         excludeFromSemantics: isWebDesktop,
         onDoubleTap: peerTabModel.multiSelectionMode
             ? null
-            : () => widget.connect(context, peer.id),
+            : () {
+                if (ChurchPower.onDoubleClick(peer.id, peer.online,
+                    peer.alias.isEmpty ? formatID(peer.id) : peer.alias)) {
+                  return;
+                }
+                widget.connect(context, peer.id);
+              },
         onTap: () {
           if (peerTabModel.multiSelectionMode) {
             peerTabModel.select(peer);

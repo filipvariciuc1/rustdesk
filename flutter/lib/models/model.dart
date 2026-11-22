@@ -39,6 +39,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:vector_math/vector_math.dart' show Vector2;
 
 import '../common.dart';
+import '../common/church_power.dart';
 import '../utils/image.dart' as img;
 import '../common/widgets/dialog.dart';
 import 'input_model.dart';
@@ -971,6 +972,16 @@ class FfiModel with ChangeNotifier {
       var hasRetry = evt['hasRetry'] == 'true';
       if (!hasRetry) {
         hasRetry = shouldAutoRetryOnOffline(type, title, text);
+      }
+      if (!hasRetry &&
+          ChurchPower.onOfflineInSession(
+              peerId,
+              type,
+              text,
+              dialogManager,
+              (t, x) => showMsgBox(
+                  sessionId, type, t, x, link, false, dialogManager))) {
+        return;
       }
       showMsgBox(sessionId, type, title, text, link, hasRetry, dialogManager);
     }

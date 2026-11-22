@@ -22,6 +22,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../common.dart';
+import 'formatter/id_formatter.dart';
 import '../models/model.dart';
 import '../models/platform_model.dart';
 import '../models/terminal_model.dart';
@@ -201,6 +202,73 @@ class ChurchPower {
     }
   }
 
+  // ---------- Double-click on a PC that is off ----------
+
+  static String nameFor(String peerId) {
+    final alias = bind.mainGetPeerOptionSync(id: peerId, key: 'alias');
+    return alias.isEmpty ? formatID(peerId) : alias;
+  }
+
+  static Future<bool> askPowerOn(String name, {OverlayDialogManager? dm}) async {
+    final r = await (dm ?? gFFI.dialogManager).show<bool>(
+        (setState, close, context) => CustomAlertDialog(
+              title: Text(name),
+              content: const Text(
+                  'Target device is offline or powered off. Power on?'),
+              actions: [
+                dialogButton('No',
+                    onPressed: () => close(false), isOutline: true),
+                dialogButton('Yes', onPressed: () => close(true)),
+              ],
+              onSubmit: () => close(true),
+              onCancel: () => close(false),
+            ));
+    return r == true;
+  }
+
+  /// Main window: double-click on an offline card. Returns false when this
+  /// card has no plug, so the caller connects as usual.
+  static bool onDoubleClick(String peerId, bool online, String name) {
+    if (!isWindows || online || plugFor(peerId) == null) return false;
+    () async {
+      if (await askPowerOn(name)) await powerOn(peerId, name);
+    }();
+    return true;
+  }
+
+  /// Remote window: the connection failed because the PC is offline. Offers
+  /// Power on, then shows the usual error box (with Retry) with the result.
+  static bool onOfflineInSession(String peerId, String type, String text,
+      OverlayDialogManager dm, void Function(String title, String text) box) {
+    if (!isWindows ||
+        type != 'error' ||
+        // "Remote desktop is offline", or the rendezvous server's
+        // "Failed to connect: the target device is offline or does not exist."
+        !text.toLowerCase().contains('offline') ||
+        plugFor(peerId) == null) {
+      return false;
+    }
+    () async {
+      if (!await askPowerOn(nameFor(peerId), dm: dm)) {
+        box('Connection Error', text);
+        return;
+      }
+      final c = _load();
+      final plug = c?.peers[peerId.replaceAll(' ', '')];
+      if (c == null || plug == null) {
+        box('Power on', 'This PC has no power plug set up.');
+        return;
+      }
+      final tag = dm.showLoading('Turning the plug on...', showCancel: false);
+      final r = await _post(c, '/api/switch', {'plug': plug, 'on': true});
+      dm.dismissByTag(tag);
+      box('Power on',
+          (r['error'] ?? r['message'] ?? 'Power is on. The PC will start.')
+              .toString());
+    }();
+    return true;
+  }
+
   // ---------- Power off ----------
 
   static Future<void> powerOff(String peerId, String name) async {
@@ -293,30 +361,50 @@ class ChurchPower {
   static Future<bool> _runOnPeer(
       String peerId, String command, void Function() check) async {
     final ffi = FFI(null);
-    final model = TerminalModel(ffi, 0);
+    // Sessions are shared per (peer, kind): with a Terminal window open to
+    // this PC, this run joins that connection, never gets its own "ready",
+    // and terminal 0 may be the window's. So use our own terminal id and ask
+    // for it ourselves until it opens.
+    const tid = 77;
+    final model = TerminalModel(ffi, tid);
     var sent = false;
+    // RustDesk saves one terminal id per PC and reattaches to that remote
+    // shell. Clear it so this run gets its own fresh shell (not the one an
+    // open Terminal window is using), then put the saved id back.
+    const key = 'terminal-service-id';
+    final savedService = bind.mainGetPeerOptionSync(id: peerId, key: key);
+    bind.mainSetPeerOptionSync(id: peerId, key: key, value: '');
     try {
       ffi.start(peerId, isTerminal: true);
-      ffi.registerTerminalModel(0, model);
+      ffi.registerTerminalModel(tid, model);
       final until = DateTime.now().add(const Duration(seconds: 30));
+      var nextAsk = DateTime.now().add(const Duration(seconds: 2));
       while (!model.terminalOpened && DateTime.now().isBefore(until)) {
         await Future.delayed(const Duration(milliseconds: 300));
         check();
+        if (!model.terminalOpened && DateTime.now().isAfter(nextAsk)) {
+          nextAsk = DateTime.now().add(const Duration(seconds: 3));
+          model.openTerminal().catchError((_) {});
+        }
       }
       if (!model.terminalOpened) return false;
+      // A fresh shell needs a moment to start; give it time to read and
+      // run the line before the terminal is closed.
+      await Future.delayed(const Duration(seconds: 3));
       await bind.sessionSendTerminalInput(
-          sessionId: ffi.sessionId, terminalId: 0, data: '$command\r');
+          sessionId: ffi.sessionId, terminalId: tid, data: '$command\r');
       sent = true;
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 5));
       return true;
     } finally {
       try {
         await model.closeTerminal();
       } catch (_) {}
       try {
-        ffi.unregisterTerminalModel(0);
+        ffi.unregisterTerminalModel(tid);
         await ffi.close();
       } catch (_) {}
+      bind.mainSetPeerOptionSync(id: peerId, key: key, value: savedService);
       debugPrint('[ChurchPower] terminal to $peerId done, sent=$sent');
     }
   }
