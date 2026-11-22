@@ -10,6 +10,7 @@ import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
 import '../../common.dart';
+import '../../common/church_power.dart';
 import '../../common/formatter/id_formatter.dart';
 import '../../models/peer_model.dart';
 import '../../models/platform_model.dart';
@@ -592,6 +593,10 @@ abstract class BasePeerCard extends StatelessWidget {
     if (isWindows && peer.platform == kPeerPlatformWindows) {
       menuItems.add(_rdpAction(context, peer.id));
     }
+    if (isWindows && ChurchPower.plugFor(peer.id) != null) {
+      menuItems.add(_churchPowerAction('Power on', ChurchPower.powerOn));
+      menuItems.add(_churchPowerAction('Power off', ChurchPower.powerOff));
+    }
     menuItems.add(MenuEntryDivider<String>());
     menuItems.add(_requestApprovalAction(context));
     // menuItems.add(await _openNewConnInOptAction(peer.id));
@@ -769,6 +774,17 @@ abstract class BasePeerCard extends StatelessWidget {
       proc: () {
         connectInPeerTab(context, peer, tab, isRDP: true);
       },
+      padding: menuPadding,
+      dismissOnClicked: true,
+    );
+  }
+
+  /// Fork: church PC power plug buttons.
+  MenuEntryBase<String> _churchPowerAction(
+      String label, Future<void> Function(String id, String name) run) {
+    return MenuEntryButton<String>(
+      childBuilder: (TextStyle? style) => Text(label, style: style),
+      proc: () => run(peer.id, peer.alias.isEmpty ? formatID(peer.id) : peer.alias),
       padding: menuPadding,
       dismissOnClicked: true,
     );
