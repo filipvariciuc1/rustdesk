@@ -403,6 +403,9 @@ class ChurchPower {
       final id = _clean((pc['id'] ?? '').toString());
       if (id.isEmpty) continue;
       if (pc['power'] == true) peers[id] = '';
+      // Without a platform the peer lists hide (and delete) the entry.
+      await bind.mainSetPeerOption(
+          id: id, key: 'church_platform', value: 'Windows');
       final name = (pc['name'] ?? '').toString();
       if (name.isNotEmpty &&
           bind.mainGetPeerOptionSync(id: id, key: 'alias').isEmpty) {

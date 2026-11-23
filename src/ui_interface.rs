@@ -335,6 +335,15 @@ pub fn set_peer_flutter_option(id: String, name: String, value: String) {
 #[inline]
 pub fn set_peer_option(id: String, name: String, value: String) {
     let mut c = PeerConfig::load(&id);
+    // Church import: a PC this device never connected to has no platform, and
+    // the peer lists drop (and delete) such entries. Record one, never overwrite.
+    if name == "church_platform" {
+        if c.info.platform.is_empty() && !value.is_empty() {
+            c.info.platform = value;
+            c.store(&id);
+        }
+        return;
+    }
     if value.is_empty() {
         c.options.remove(&name);
     } else {
