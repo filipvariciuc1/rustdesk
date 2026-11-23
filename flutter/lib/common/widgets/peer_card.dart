@@ -599,9 +599,11 @@ abstract class BasePeerCard extends StatelessWidget {
     if (isWindows && peer.platform == kPeerPlatformWindows) {
       menuItems.add(_rdpAction(context, peer.id));
     }
-    if (isWindows && ChurchPower.plugFor(peer.id) != null) {
+    if (ChurchPower.plugFor(peer.id) != null) {
       menuItems.add(_churchPowerAction('Power on', ChurchPower.powerOn));
-      menuItems.add(_churchPowerAction('Power off', ChurchPower.powerOff));
+      if (isDesktop) {
+        menuItems.add(_churchPowerAction('Power off', ChurchPower.powerOff));
+      }
     }
     menuItems.add(MenuEntryDivider<String>());
     menuItems.add(_requestApprovalAction(context));

@@ -25,6 +25,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import '../../common.dart';
 import '../../models/platform_model.dart';
+import '../church_power.dart';
 
 class PeerTabPage extends StatefulWidget {
   const PeerTabPage({Key? key}) : super(key: key);
@@ -566,6 +567,17 @@ class _PeerTabPageState extends State<PeerTabPage>
         });
   }
 
+  Widget _importChurchPCs() {
+    return _hoverAction(
+        context: context,
+        toolTip: 'Import church PCs',
+        child: Icon(
+          Icons.church,
+          size: 18,
+        ),
+        onTap: ChurchPower.importChurchPCs);
+  }
+
   bool _showWebConsole(PeerTabModel model) =>
       model.currentTab == PeerTabIndex.ab.index &&
       gFFI.userModel.isLogin &&
@@ -597,6 +609,7 @@ class _PeerTabPageState extends State<PeerTabPage>
         offstage: model.currentTab != PeerTabIndex.ab.index,
         child: _toggleTags(),
       ),
+      _importChurchPCs(),
     ];
   }
 
@@ -658,7 +671,8 @@ class _PeerTabPageState extends State<PeerTabPage>
       if (model.currentTabCachedPeers.isNotEmpty) _createMultiSelection(),
       if (model.currentTab != PeerTabIndex.recent.index) PeerSortDropdown(),
       if (_showWebConsole(model)) _openWebConsole(),
-      if (model.currentTab == PeerTabIndex.ab.index) _toggleTags()
+      if (model.currentTab == PeerTabIndex.ab.index) _toggleTags(),
+      _importChurchPCs(),
     ];
     final rightWidth = availableWidth -
         searchWidth -
