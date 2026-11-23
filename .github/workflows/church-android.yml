@@ -6,6 +6,10 @@ name: Church Android APK
 
 on:
   workflow_dispatch:
+  # workflow_dispatch only works once this file is on the fork's default branch,
+  # so a push to the church branch builds too.
+  push:
+    branches: [power-buttons]
 
 env:
   RUST_VERSION: "1.75"
