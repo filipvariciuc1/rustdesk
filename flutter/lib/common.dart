@@ -40,6 +40,7 @@ import 'desktop/pages/view_camera_page.dart' as desktop_view_camera;
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'models/model.dart';
 import 'models/platform_model.dart';
+import 'common/church_power.dart';
 
 import 'package:flutter_hbb/native/win32.dart'
     if (dart.library.html) 'package:flutter_hbb/web/win32.dart';
@@ -2624,6 +2625,16 @@ connect(BuildContext context, String id,
     } catch (_) {}
   }
   id = id.replaceAll(' ', '');
+  final seat = ChurchPower.seatFor(id);
+  if (seat != null) {
+    if (!isWindows) {
+      showToast('${seat.name} opens with Remote Desktop, on Windows only.');
+      return;
+    }
+    id = await ChurchPower.prepareSeat(seat);
+    isFileTransfer = isViewCamera = isTerminal = isTcpTunneling = false;
+    isRDP = true;
+  }
   final oldId = id;
   id = await bind.mainHandleRelayId(id: id);
   forceRelay = id != oldId || forceRelay;

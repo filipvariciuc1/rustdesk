@@ -17,6 +17,7 @@ import '../../common.dart';
 import '../../models/peer_model.dart';
 import '../../models/platform_model.dart';
 import 'peer_card.dart';
+import '../church_power.dart';
 
 typedef PeerFilter = bool Function(Peer peer);
 typedef PeerCardBuilder = Widget Function(Peer peer);
@@ -333,7 +334,7 @@ class _PeersViewState extends State<_PeersView>
           if (!skipIfNotActive && (_queryCount < _maxQueryCount || !p)) {
             if (now.difference(_lastQueryTime) >= _queryInterval) {
               if (_curPeers.isNotEmpty) {
-                bind.queryOnlines(ids: _curPeers.toList(growable: false));
+                bind.queryOnlines(ids: ChurchPower.onlineQueryIds(_curPeers));
                 _lastQueryTime = DateTime.now();
                 _queryCount += 1;
               }
@@ -347,7 +348,7 @@ class _PeersViewState extends State<_PeersView>
 
   _queryOnlines(bool isLoadEvent) {
     if (_curPeers.isNotEmpty) {
-      bind.queryOnlines(ids: _curPeers.toList(growable: false));
+      bind.queryOnlines(ids: ChurchPower.onlineQueryIds(_curPeers));
       _queryCount = 0;
     }
     _lastQueryPeers = {..._curPeers};

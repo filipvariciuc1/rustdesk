@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'platform_model.dart';
+import '../common/church_power.dart';
 // ignore: depend_on_referenced_packages
 import 'package:collection/collection.dart';
 
@@ -220,7 +221,7 @@ class Peers extends ChangeNotifier {
     int changedCount = 0;
     evt['onlines'].split(',').forEach((online) {
       for (var i = 0; i < peers.length; i++) {
-        if (peers[i].id == online) {
+        if (ChurchPower.realId(peers[i].id) == online) {
           if (!peers[i].online) {
             changedCount += 1;
             peers[i].online = true;
@@ -231,7 +232,7 @@ class Peers extends ChangeNotifier {
 
     evt['offlines'].split(',').forEach((offline) {
       for (var i = 0; i < peers.length; i++) {
-        if (peers[i].id == offline) {
+        if (ChurchPower.realId(peers[i].id) == offline) {
           if (peers[i].online) {
             changedCount += 1;
             peers[i].online = false;

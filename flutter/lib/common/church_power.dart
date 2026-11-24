@@ -43,11 +43,73 @@ class ChurchPowerConfig {
 
 class _Cancelled implements Exception {}
 
+/// One person's half of a shared PC (the NUC runs two seats). Its card has
+/// its own id and opens RDP, through RustDesk, to [peer] as [user].
+class ChurchSeat {
+  final String id, peer, name, user;
+  const ChurchSeat(this.id, this.peer, this.name, this.user);
+}
+
 class ChurchPower {
   static const defaultUrl = 'https://church-power.hz-relay-mi5cp4r0.workers.dev';
   static const _opt = 'church-power';
 
-  static String _clean(String id) => id.replaceAll(' ', '');
+  static const seats = [
+    ChurchSeat('nuc-casier', '190681964', 'Casier', r'PASTORAL-OFFICE\Casier'),
+    ChurchSeat(
+        'nuc-secretar', '190681964', 'Secretar', r'PASTORAL-OFFICE\Secretar'),
+  ];
+
+  static ChurchSeat? seatFor(String id) {
+    final c = id.replaceAll(' ', '');
+    for (final s in seats) {
+      if (s.id == c) return s;
+    }
+    return null;
+  }
+
+  /// A seat card's real RustDesk id; any other id unchanged.
+  static String realId(String id) =>
+      seatFor(id)?.peer ?? id.replaceAll(' ', '');
+
+  /// Seat cards are asked about as their real PC, so they show its online dot.
+  static List<String> onlineQueryIds(Iterable<String> ids) =>
+      ids.map(realId).toSet().toList(growable: false);
+
+  /// Adds the seat cards to Favorites once, on Windows (RDP needs mstsc),
+  /// when this device knows the PC they live on.
+  static Future<void> ensureSeats() async {
+    if (!Platform.isWindows) return;
+    final favs = (await bind.mainGetFav()).toList();
+    var added = false;
+    for (final s in seats) {
+      if (await bind.mainPeerExists(id: s.id)) continue;
+      if (!await bind.mainPeerExists(id: s.peer)) continue;
+      await bind.mainSetPeerOption(
+          id: s.id, key: 'church_platform', value: 'Windows');
+      await bind.mainSetPeerOption(id: s.id, key: 'rdp_username', value: s.user);
+      await bind.mainSetPeerAlias(id: s.id, alias: s.name);
+      if (!favs.contains(s.id)) favs.add(s.id);
+      added = true;
+    }
+    if (!added) return;
+    await bind.mainStoreFav(favs: favs);
+    bind.mainLoadFavPeers();
+    bind.mainLoadRecentPeers();
+  }
+
+  /// Hands the seat's RDP user (and password, if saved on the seat card) to
+  /// the real PC's settings, which the RDP launcher reads. Returns the real id.
+  static Future<String> prepareSeat(ChurchSeat s) async {
+    var user = await bind.mainGetPeerOption(id: s.id, key: 'rdp_username');
+    if (user.isEmpty) user = s.user;
+    final pass = await bind.mainGetPeerOption(id: s.id, key: 'rdp_password');
+    await bind.mainSetPeerOption(id: s.peer, key: 'rdp_username', value: user);
+    await bind.mainSetPeerOption(id: s.peer, key: 'rdp_password', value: pass);
+    return s.peer;
+  }
+
+  static String _clean(String id) => realId(id);
 
   static Map<String, dynamic>? _readFile() {
     if (!Platform.isWindows) return null;
@@ -419,6 +481,7 @@ class ChurchPower {
     await bind.mainStoreFav(favs: favs);
     bind.mainLoadRecentPeers();
     bind.mainLoadFavPeers();
+    await ensureSeats();
     showToast('Added ${pcs.length} church PCs.',
         timeout: const Duration(seconds: 5));
   }

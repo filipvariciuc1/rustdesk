@@ -75,6 +75,7 @@ class _PeerTabPageState extends State<PeerTabPage>
 
   _PeerTabPageState() {
     _loadLocalOptions();
+    ChurchPower.ensureSeats();
   }
 
   void _loadLocalOptions() {
