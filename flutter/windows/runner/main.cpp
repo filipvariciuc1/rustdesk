@@ -123,9 +123,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
         DispatchToUniLinksDesktop(hwnd);
       } else {
         // Not called with arguments, or just open the app shortcut on desktop.
-        // So we just show the main window instead.
-        ::ShowWindow(hwnd, SW_NORMAL);
-        ::SetForegroundWindow(hwnd);
+        // The main window stays hidden; ask it to open or focus the New tab.
+        DWORD pid = 0;
+        ::GetWindowThreadProcessId(hwnd, &pid);
+        if (pid != 0) {
+          ::AllowSetForegroundWindow(pid);
+        }
+        const char* home_link = "rustdesk-church://home";
+        COPYDATASTRUCT cds = {0};
+        cds.dwData = UNI_LINKS_DESKTOP_MSG_ID;
+        cds.cbData = (DWORD)(strlen(home_link) + 1);
+        cds.lpData = (PVOID)home_link;
+        ::SendMessage(hwnd, WM_COPYDATA, 0, (LPARAM)&cds);
       }
       return EXIT_FAILURE;
     }

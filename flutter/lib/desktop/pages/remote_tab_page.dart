@@ -11,6 +11,7 @@ import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/input_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/desktop/pages/computers_tab.dart';
+import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/desktop/pages/remote_page.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
@@ -20,6 +21,7 @@ import 'package:flutter_hbb/desktop/widgets/popup_menu.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
+import 'package:provider/provider.dart';
 import 'package:bot_toast/bot_toast.dart';
 
 import '../../common/widgets/dialog.dart';
@@ -66,12 +68,11 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
     _display = display as int?;
     tryMoveToScreenAndSetFullscreen(screenRect);
     if (peerId != null) {
-      ConnectionTypeState.init(peerId!);
+      if (peerId != kComputersTabKey) ConnectionTypeState.init(peerId!);
       tabController.onSelected = (id) {
         if (id == kComputersTabKey) {
-          FocusManager.instance.primaryFocus?.unfocus();
           WindowController.fromWindowId(params['windowId'])
-              .setTitle('Computers');
+              .setTitle(getWindowName());
           return;
         }
         final remotePage = tabController.widget(id);
@@ -83,6 +84,13 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
             .setTitle(getWindowNameWithId(id));
         UnreadChatCountState.find(id).value = 0;
       };
+      if (peerId == kComputersTabKey) {
+        _openComputersTab();
+        Future.delayed(Duration.zero, () {
+          WindowController.fromWindowId(params['windowId'])
+              .setTitle(getWindowName());
+        });
+      } else {
       tabController.add(TabInfo(
         key: peerId!,
         label: peerId!,
@@ -113,35 +121,35 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           isSharedPassword: params['isSharedPassword'],
         ),
       ));
+      }
       _update_remote_count();
     }
     tabController.onRemoved = (_, id) => onRemoveId(id);
     rustDeskWinManager.setMethodHandler(_remoteMethodHandler);
   }
 
-  bool _closeComputersOnNext = false;
-
+  // The stock start page, as a tab. Picking a PC there replaces it.
   void _openComputersTab() {
     FocusManager.instance.primaryFocus?.unfocus();
     tabController.add(TabInfo(
       key: kComputersTabKey,
-      label: 'Computers',
-      selectedIcon: Icons.apps,
-      unselectedIcon: Icons.apps_outlined,
+      label: 'New tab',
+      selectedIcon: Icons.home,
+      unselectedIcon: Icons.home_outlined,
       onTabCloseButton: () => tabController.closeBy(kComputersTabKey),
-      page: ComputersPage(
-          key: const ValueKey(kComputersTabKey), onOpen: _openFromComputers),
+      // Same providers the main window's App gives the start page.
+      page: MultiProvider(
+        key: const ValueKey(kComputersTabKey),
+        providers: [
+          ChangeNotifierProvider.value(value: gFFI.ffiModel),
+          ChangeNotifierProvider.value(value: gFFI.imageModel),
+          ChangeNotifierProvider.value(value: gFFI.cursorModel),
+          ChangeNotifierProvider.value(value: gFFI.canvasModel),
+          ChangeNotifierProvider.value(value: gFFI.peerTabModel),
+        ],
+        child: const DesktopHomePage(asTab: true),
+      ),
     ));
-  }
-
-  // Closing the only tab closes the window, so wait for the new remote tab.
-  void _openFromComputers(String id) {
-    connect(context, id);
-    if (tabController.length > 1) {
-      tabController.closeBy(kComputersTabKey);
-    } else {
-      _closeComputersOnNext = true;
-    }
   }
 
   // Ctrl+T opens the Computers tab only while no remote screen has the keyboard;
@@ -503,6 +511,12 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
     if (call.method == kWindowEventNewRemoteDesktop) {
       final args = jsonDecode(call.arguments);
       final id = args['id'];
+      if (id == kComputersTabKey) {
+        _openComputersTab();
+        _update_remote_count();
+        windowOnTop(windowId());
+        return null;
+      }
       final switchUuid = args['switch_uuid'];
       final sessionId = args['session_id'];
       final tabWindowId = args['tab_window_id'];
@@ -552,8 +566,9 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           isSharedPassword: args['isSharedPassword'],
         ),
       ));
-      if (_closeComputersOnNext) {
-        _closeComputersOnNext = false;
+      // Browser-like: the new tab becomes the PC that was picked.
+      if (tabController.state.value.tabs
+          .any((t) => t.key == kComputersTabKey)) {
         tabController.closeBy(kComputersTabKey);
       }
     } else if (call.method == kWindowDisableGrabKeyboard) {
@@ -577,8 +592,12 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
         windowOnTop(windowId());
       }
       return jumpOk;
+    } else if (call.method == kWindowForwardEvent) {
+      await platformFFI.tryHandle(
+          Map<String, dynamic>.from(jsonDecode(call.arguments)));
     } else if (call.method == kWindowEventGetRemoteList) {
       return tabController.state.value.tabs
+          .where((e) => e.key != kComputersTabKey)
           .map((e) => e.key)
           .toList()
           .join(',');

@@ -9,6 +9,7 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/widgets/animated_rotation_widget.dart';
 import 'package:flutter_hbb/common/widgets/custom_password.dart';
 import 'package:flutter_hbb/consts.dart';
+import 'package:flutter_hbb/desktop/pages/computers_tab.dart';
 import 'package:flutter_hbb/desktop/pages/connection_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
@@ -26,7 +27,11 @@ import 'package:window_size/window_size.dart' as window_size;
 import '../widgets/button.dart';
 
 class DesktopHomePage extends StatefulWidget {
-  const DesktopHomePage({Key? key}) : super(key: key);
+  const DesktopHomePage({Key? key, this.asTab = false}) : super(key: key);
+
+  /// Shown as the "New tab" inside the remote tab window: leave the window's
+  /// method handler, quit listener and uni links to that window.
+  final bool asTab;
 
   @override
   State<DesktopHomePage> createState() => _DesktopHomePageState();
@@ -257,7 +262,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     final textColor = Theme.of(context).textTheme.titleLarge?.color;
     RxBool hover = false.obs;
     return InkWell(
-      onTap: DesktopTabPage.onAddSetting,
+      onTap: widget.asTab ? openSettingsFromTab : DesktopTabPage.onAddSetting,
       child: Tooltip(
         message: translate('Settings'),
         child: Obx(
@@ -749,6 +754,17 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       }
     });
     Get.put<RxBool>(svcStopped, tag: 'stop-service');
+    if (!widget.asTab) _initMainWindowHooks();
+
+    if (bind.isIncomingOnly()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _updateWindowSize();
+      });
+    }
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  void _initMainWindowHooks() {
     rustDeskWinManager.registerActiveWindowListener(onActiveWindowChanged);
 
     screenToMap(window_size.Screen screen) => {
@@ -782,6 +798,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       }
       if (call.method == kWindowMainWindowOnTop) {
         windowOnTop(null);
+      } else if (call.method == kWindowShowSettings) {
+        // Register first so the app does not quit when this window shows.
+        await rustDeskWinManager.registerActiveWindow(kWindowMainId);
+        await windowOnTop(null);
+        DesktopTabPage.onAddSetting();
       } else if (call.method == kWindowRefreshCurrentUser) {
         gFFI.userModel.refreshCurrentUser();
       } else if (call.method == kWindowGetScreenList) {
@@ -847,13 +868,6 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       }
     });
     _uniLinksSubscription = listenUniLinks();
-
-    if (bind.isIncomingOnly()) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _updateWindowSize();
-      });
-    }
-    WidgetsBinding.instance.addObserver(this);
   }
 
   _updateWindowSize() {

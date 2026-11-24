@@ -417,6 +417,17 @@ class RustDeskMultiWindowManager {
     return MultiWindowCallResult(wnds[0], res);
   }
 
+  /// Send to every window of [type], not just one. Errors are skipped.
+  Future<void> callAll(WindowType type, String methodName, dynamic args) async {
+    for (final windowId in List<int>.from(_findWindowsByType(type))) {
+      try {
+        await DesktopMultiWindow.invokeMethod(windowId, methodName, args);
+      } catch (e) {
+        debugPrint('callAll $methodName to $windowId failed: $e');
+      }
+    }
+  }
+
   List<int> _findWindowsByType(WindowType type) {
     switch (type) {
       case WindowType.Main:

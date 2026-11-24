@@ -7,6 +7,7 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/widgets/overlay.dart';
+import 'package:flutter_hbb/desktop/pages/computers_tab.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
 import 'package:flutter_hbb/desktop/pages/install_page.dart';
 import 'package:flutter_hbb/desktop/pages/server_page.dart';
@@ -133,6 +134,7 @@ Future<void> initEnv(String appType) async {
 void runMainApp(bool startService) async {
   // register uni links
   await initEnv(kAppTypeMain);
+  if (isDesktop) forwardPeerEventsToTabs();
   checkUpdate();
   // trigger connection status updater
   await bind.mainCheckConnectStatus();
@@ -160,6 +162,10 @@ void runMainApp(bool startService) async {
     debugPrint("handled by uni links: $handledByUniLinks");
     if (handledByUniLinks || handleUriLink(cmdArgs: kBootArgs)) {
       windowManager.hide();
+    } else if (isWindows && !bind.isIncomingOnly()) {
+      // No separate start window: open straight to the tab window's New tab.
+      windowManager.hide();
+      openComputersHome();
     } else {
       windowManager.show();
       windowManager.focus();

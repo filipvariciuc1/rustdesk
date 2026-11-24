@@ -41,6 +41,7 @@ import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'models/model.dart';
 import 'models/platform_model.dart';
 import 'common/church_power.dart';
+import 'desktop/pages/computers_tab.dart';
 
 import 'package:flutter_hbb/native/win32.dart'
     if (dart.library.html) 'package:flutter_hbb/web/win32.dart';
@@ -2226,6 +2227,10 @@ StreamSubscription? listenUniLinks({handleByFlutter = true}) {
   final sub = uriLinkStream.listen((Uri? uri) {
     debugPrint("A uri was received: $uri. handleByFlutter $handleByFlutter");
     if (uri != null) {
+      if (uri.scheme == kHomeTabScheme && uri.host == 'home') {
+        openComputersHome();
+        return;
+      }
       if (handleByFlutter) {
         handleUriLink(uri: uri);
       } else {
