@@ -4,11 +4,13 @@ import 'dart:ui' as ui;
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/shared_state.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/input_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
+import 'package:flutter_hbb/desktop/pages/computers_tab.dart';
 import 'package:flutter_hbb/desktop/pages/remote_page.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
@@ -66,6 +68,12 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
     if (peerId != null) {
       ConnectionTypeState.init(peerId!);
       tabController.onSelected = (id) {
+        if (id == kComputersTabKey) {
+          FocusManager.instance.primaryFocus?.unfocus();
+          WindowController.fromWindowId(params['windowId'])
+              .setTitle('Computers');
+          return;
+        }
         final remotePage = tabController.widget(id);
         if (remotePage is RemotePage) {
           final ffi = remotePage.ffi;
@@ -111,9 +119,68 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
     rustDeskWinManager.setMethodHandler(_remoteMethodHandler);
   }
 
+  bool _closeComputersOnNext = false;
+
+  void _openComputersTab() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    tabController.add(TabInfo(
+      key: kComputersTabKey,
+      label: 'Computers',
+      selectedIcon: Icons.apps,
+      unselectedIcon: Icons.apps_outlined,
+      onTabCloseButton: () => tabController.closeBy(kComputersTabKey),
+      page: ComputersPage(
+          key: const ValueKey(kComputersTabKey), onOpen: _openFromComputers),
+    ));
+  }
+
+  // Closing the only tab closes the window, so wait for the new remote tab.
+  void _openFromComputers(String id) {
+    connect(context, id);
+    if (tabController.length > 1) {
+      tabController.closeBy(kComputersTabKey);
+    } else {
+      _closeComputersOnNext = true;
+    }
+  }
+
+  // Ctrl+T opens the Computers tab only while no remote screen has the keyboard;
+  // otherwise it goes to the remote PC as before.
+  bool _onCtrlT(KeyEvent e) {
+    if (e is! KeyDownEvent || e.logicalKey != LogicalKeyboardKey.keyT) {
+      return false;
+    }
+    final k = HardwareKeyboard.instance;
+    if (!k.isControlPressed || k.isAltPressed || k.isShiftPressed) return false;
+    final focusCtx = FocusManager.instance.primaryFocus?.context;
+    if (focusCtx?.findAncestorWidgetOfExactType<RemotePage>() != null) {
+      return false;
+    }
+    _openComputersTab();
+    return true;
+  }
+
+  // Clicking the tab bar hands the keyboard back to this PC, so Ctrl+T works.
+  Widget _unfocusOnTabBarClick(Widget child) => Listener(
+        onPointerDown: (e) {
+          if (e.localPosition.dy < kDesktopRemoteTabBarHeight &&
+              stateGlobal.fullscreen.isFalse) {
+            FocusManager.instance.primaryFocus?.unfocus();
+          }
+        },
+        child: child,
+      );
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onCtrlT);
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_onCtrlT);
 
     if (!_isScreenRectSet) {
       Future.delayed(Duration.zero, () {
@@ -133,20 +200,26 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
   Widget build(BuildContext context) {
     final child = Scaffold(
       backgroundColor: Theme.of(context).colorScheme.background,
-      body: DesktopTab(
+      body: _unfocusOnTabBarClick(DesktopTab(
         controller: tabController,
         onWindowCloseButton: handleWindowCloseButton,
         tail: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             _RelativeMouseModeHint(tabController: tabController),
-            const AddButton(),
+            ActionIcon(
+                message: 'New tab (Ctrl+T)',
+                icon: IconFont.add,
+                onTap: _openComputersTab,
+                isClose: false),
           ],
         ),
         selectedBorderColor: MyTheme.accent,
         pageViewBuilder: (pageView) => pageView,
         labelGetter: DesktopTab.tablabelGetter,
-        tabBuilder: (key, icon, label, themeConf) => Obx(() {
+        tabBuilder: (key, icon, label, themeConf) => key == kComputersTabKey
+            ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [icon, label])
+            : Obx(() {
           final connectionType = ConnectionTypeState.find(key);
           if (!connectionType.isValid()) {
             return Row(
@@ -215,7 +288,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
             );
           }
         }),
-      ),
+      )),
     );
     final tabWidget = isLinux
         ? buildVirtualWindowFrame(context, child)
@@ -479,6 +552,10 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           isSharedPassword: args['isSharedPassword'],
         ),
       ));
+      if (_closeComputersOnNext) {
+        _closeComputersOnNext = false;
+        tabController.closeBy(kComputersTabKey);
+      }
     } else if (call.method == kWindowDisableGrabKeyboard) {
       // ???
     } else if (call.method == "onDestroy") {
@@ -507,6 +584,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           .join(',');
     } else if (call.method == kWindowEventGetSessionIdList) {
       return tabController.state.value.tabs
+          .where((e) => e.page is RemotePage)
           .map((e) => '${e.key},${(e.page as RemotePage).ffi.sessionId}')
           .toList()
           .join(';');
@@ -529,7 +607,8 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
         closeSessionOnDispose[id] = false;
         tabController.closeBy(id);
       }
-    } else if (call.method == kWindowEventRemoteWindowCoords) {
+    } else if (call.method == kWindowEventRemoteWindowCoords &&
+        tabController.state.value.selectedTabInfo.page is RemotePage) {
       final remotePage =
           tabController.state.value.selectedTabInfo.page as RemotePage;
       final ffi = remotePage.ffi;
