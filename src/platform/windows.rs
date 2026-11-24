@@ -2784,11 +2784,12 @@ pub fn rdp_skip_cert_warning(secs: u64) {
 // This only changes mstsc's top-level window title. The full-screen connection
 // bar is rendered separately and cannot be customized when mstsc.exe is
 // launched as an independent process.
-pub fn set_rdp_window_title(mut child: std::process::Child, name: String) {
+pub fn set_rdp_window_title(
+    mut child: std::process::Child,
+    name: String,
+    on_exit: impl FnOnce() + Send + 'static,
+) {
     let name: String = name.chars().filter(|c| !c.is_control()).take(120).collect();
-    if name.is_empty() {
-        return;
-    }
     let process_id = child.id();
     // mstsc owns the title and can restore "localhost" while connecting or
     // reconnecting. Follow only the process we launched and reapply the peer
@@ -2804,6 +2805,7 @@ pub fn set_rdp_window_title(mut child: std::process::Child, name: String) {
                         log::warn!("Failed to query mstsc process: {}", err);
                         break;
                     }
+                    Ok(None) if name.is_empty() => {}
                     Ok(None) => match set_process_rdp_window_title(process_id, &name) {
                         Ok(()) => warned = false,
                         Err(err) if !warned => {
@@ -2815,6 +2817,7 @@ pub fn set_rdp_window_title(mut child: std::process::Child, name: String) {
                 }
                 std::thread::sleep(Duration::from_millis(500));
             }
+            on_exit();
         })
     {
         log::warn!("Failed to start RDP window title thread: {}", err);

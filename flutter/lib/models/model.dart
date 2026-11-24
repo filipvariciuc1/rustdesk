@@ -894,6 +894,19 @@ class FfiModel with ChangeNotifier {
     final text = evt['text'];
     final link = evt['link'];
 
+    // RDP tunnels run in a hidden window. Its desktop closed: close the tunnel.
+    // Anything else it has to say (wrong password, offline...) needs the
+    // window, so show it.
+    if (parent.target?.connType == ConnType.portForward) {
+      if (type == 'rdp-closed') {
+        closeConnection(id: peerId);
+        return;
+      }
+      if (stateGlobal.windowId >= 0) {
+        WindowController.fromWindowId(stateGlobal.windowId).show();
+      }
+    }
+
     // The peer-gone detector reconnects under `restarting-show` rather than an error title, so
     // it needs naming here too. By its own title, not the type: an explicitly restarted remote
     // device reaches the same type from a path this change does not touch.

@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, RwLock,
+};
 
 use crate::client::*;
 use crate::port_forward_mux::{Claim, Tunnel, CHANNEL_WINDOW};
@@ -16,7 +19,8 @@ use hbb_common::{
 };
 use base::message_proto::*;
 
-fn run_rdp(port: u16, name: &str) {
+// `on_exit` runs once the mstsc we start here has closed (Windows only).
+fn run_rdp(port: u16, name: &str, on_exit: impl FnOnce() + Send + 'static) {
     std::process::Command::new("cmdkey")
         .arg("/delete:localhost")
         .output()
@@ -46,9 +50,9 @@ fn run_rdp(port: u16, name: &str) {
     {
         Ok(child) => {
             #[cfg(windows)]
-            crate::platform::set_rdp_window_title(child, name.to_owned());
+            crate::platform::set_rdp_window_title(child, name.to_owned(), on_exit);
             #[cfg(not(windows))]
-            let _ = (child, name);
+            let _ = (child, name, on_exit);
         }
         Err(err) => log::warn!("Failed to launch mstsc: {}", err),
     }
@@ -128,8 +132,26 @@ pub async fn listen(
     let addr = listener.local_addr()?;
     log::info!("listening on port {:?}", addr);
     let is_rdp = port == 0;
+    // An RDP tunnel lives as long as its desktop: when the last mstsc we
+    // started closes, tell the (hidden) port forward window to close it.
+    let live_rdp = Arc::new(AtomicUsize::new(0));
+    let rdp_exit = {
+        let live_rdp = live_rdp.clone();
+        let interface = interface.clone();
+        move || {
+            live_rdp.fetch_add(1, Ordering::SeqCst);
+            let live_rdp = live_rdp.clone();
+            let interface = interface.clone();
+            move || {
+                if live_rdp.fetch_sub(1, Ordering::SeqCst) == 1 {
+                    log::info!("mstsc closed, closing the RDP tunnel");
+                    interface.msgbox("rdp-closed", "", "", "");
+                }
+            }
+        }
+    };
     if is_rdp {
-        run_rdp(addr.port(), &rdp_display_name(&lc, &id));
+        run_rdp(addr.port(), &rdp_display_name(&lc, &id), rdp_exit());
     }
     let mut ui_receiver = ui_receiver;
     // One tunnel per mapping; the listener drops it on its way out, and that
@@ -190,7 +212,7 @@ pub async fn listen(
                     }
                     Some(Data::NewRDP) => {
                         println!("receive run_rdp from ui_receiver");
-                        run_rdp(addr.port(), &rdp_display_name(&lc, &id));
+                        run_rdp(addr.port(), &rdp_display_name(&lc, &id), rdp_exit());
                     }
                     _ => {}
                 }

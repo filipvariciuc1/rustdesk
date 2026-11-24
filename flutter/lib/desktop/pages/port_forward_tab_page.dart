@@ -65,7 +65,7 @@ class _PortForwardTabPageState extends State<PortForwardTabPage> {
         final args = jsonDecode(call.arguments);
         final id = args['id'];
         final isRDP = args['isRDP'];
-        windowOnTop(windowId());
+        if (isRDP != true) windowOnTop(windowId());
         if (tabController.state.value.tabs.indexWhere((e) => e.key == id) >=
             0) {
           debugPrint("port forward $id exists");
@@ -93,8 +93,12 @@ class _PortForwardTabPageState extends State<PortForwardTabPage> {
         reloadCurrentWindow();
       }
     });
-    Future.delayed(Duration.zero, () {
-      restoreWindowPosition(WindowType.PortForward, windowId: windowId());
+    Future.delayed(Duration.zero, () async {
+      await restoreWindowPosition(WindowType.PortForward,
+          windowId: windowId());
+      if (isRDP == true) {
+        WindowController.fromWindowId(windowId()).hide();
+      }
     });
   }
 

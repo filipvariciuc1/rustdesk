@@ -284,8 +284,11 @@ void runMultiWindow(
       // no such appType
       exit(0);
   }
-  // show window from hidden status
-  WindowController.fromWindowId(kWindowId!).show();
+  // show window from hidden status; an RDP tunnel stays hidden; only its
+  // remote desktop (mstsc) is shown, and it closes when that does.
+  if (!(appType == kAppTypeDesktopPortForward && argument['isRDP'] == true)) {
+    WindowController.fromWindowId(kWindowId!).show();
+  }
 }
 
 void runConnectionManagerScreen() async {
