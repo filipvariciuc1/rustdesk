@@ -566,11 +566,16 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           isSharedPassword: args['isSharedPassword'],
         ),
       ));
-      // Browser-like: the new tab becomes the PC that was picked.
-      if (tabController.state.value.tabs
-          .any((t) => t.key == kComputersTabKey)) {
-        tabController.closeBy(kComputersTabKey);
-      }
+      // Browser-like: the new tab becomes the PC that was picked. Wait until
+      // the page view has built the PC page: DesktopTab reuses its cached page
+      // list when the tab count looks unchanged, so add+close in one frame
+      // left the start page showing and the PC page never started.
+      Future.delayed(const Duration(milliseconds: 400), () {
+        final keys = tabController.state.value.tabs.map((t) => t.key);
+        if (keys.contains(kComputersTabKey) && keys.contains(id)) {
+          tabController.closeBy(kComputersTabKey);
+        }
+      });
     } else if (call.method == kWindowDisableGrabKeyboard) {
       // ???
     } else if (call.method == "onDestroy") {
