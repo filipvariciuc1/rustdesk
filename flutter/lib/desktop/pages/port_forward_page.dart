@@ -28,6 +28,7 @@ class PortForwardPage extends StatefulWidget {
   PortForwardPage({
     Key? key,
     required this.id,
+    String? tabKey,
     required this.password,
     this.loginMethod = '',
     required this.tabController,
@@ -35,8 +36,12 @@ class PortForwardPage extends StatefulWidget {
     required this.isSharedPassword,
     this.forceRelay,
     this.connToken,
-  }) : super(key: key);
+    this.preStartedFfi,
+  })  : tabKey = tabKey ?? id,
+        super(key: key);
   final String id;
+  // Tab and Get tag key; differs from `id` when two tabs share a peer (seats).
+  final String tabKey;
   final String? password;
   final String loginMethod;
   final DesktopTabController tabController;
@@ -44,6 +49,9 @@ class PortForwardPage extends StatefulWidget {
   final bool? forceRelay;
   final bool? isSharedPassword;
   final String? connToken;
+  // Seat RDP tabs: the session is started by the tab page, because a page
+  // added to the hidden Port Forward window may never be built.
+  final FFI? preStartedFfi;
   final SimpleWrapper<State<PortForwardPage>?> _lastState = SimpleWrapper(null);
 
   FFI get ffi => (_lastState.value! as _PortForwardPageState)._ffi;
@@ -67,28 +75,32 @@ class _PortForwardPageState extends State<PortForwardPage>
   @override
   void initState() {
     super.initState();
-    _ffi = FFI(null);
-    _ffi.start(widget.id,
-        isPortForward: true,
-        password: widget.password,
-        loginMethod: widget.loginMethod,
-        isSharedPassword: widget.isSharedPassword,
-        forceRelay: widget.forceRelay,
-        connToken: widget.connToken,
-        isRdp: widget.isRDP);
-    Get.put<FFI>(_ffi, tag: 'pf_${widget.id}');
+    if (widget.preStartedFfi != null) {
+      _ffi = widget.preStartedFfi!;
+    } else {
+      _ffi = FFI(null);
+      _ffi.start(widget.id,
+          isPortForward: true,
+          password: widget.password,
+          loginMethod: widget.loginMethod,
+          isSharedPassword: widget.isSharedPassword,
+          forceRelay: widget.forceRelay,
+          connToken: widget.connToken,
+          isRdp: widget.isRDP);
+      Get.put<FFI>(_ffi, tag: 'pf_${widget.tabKey}');
+    }
     debugPrint("Port forward page init success with id ${widget.id}");
     // Call onSelected in post frame callback, since we cannot guarantee that the callback will not call setState.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      widget.tabController.onSelected?.call(widget.id);
+      widget.tabController.onSelected?.call(widget.tabKey);
     });
   }
 
   @override
   void dispose() {
-    _ffi.close();
+    if (!_ffi.closed) _ffi.close();
     _ffi.dialogManager.dismissAll();
-    Get.delete<FFI>(tag: 'pf_${widget.id}');
+    Get.delete<FFI>(tag: 'pf_${widget.tabKey}');
     super.dispose();
   }
 

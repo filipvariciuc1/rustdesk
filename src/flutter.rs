@@ -2284,10 +2284,17 @@ pub mod sessions {
 
     #[inline]
     pub fn insert_session(session_id: SessionID, conn_type: ConnType, session: FlutterSession) {
+        // Seats: two RDP tunnels to the same peer (Casier + Secretar) must be two
+        // connections, so RDP sessions are keyed per session id, never shared.
+        let key = if conn_type == ConnType::RDP {
+            format!("{}|rdp|{}", session.get_id(), session_id)
+        } else {
+            session.get_id()
+        };
         SESSIONS
             .write()
             .unwrap()
-            .entry((session.get_id(), conn_type))
+            .entry((key, conn_type))
             .or_insert(session)
             .ui_handler
             .session_handlers

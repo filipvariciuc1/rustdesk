@@ -21,6 +21,11 @@ use base::message_proto::*;
 
 // `on_exit` runs once the mstsc we start here has closed (Windows only).
 fn run_rdp(port: u16, name: &str, on_exit: impl FnOnce() + Send + 'static) {
+    #[cfg(windows)]
+    let on_exit = match run_rdp_view(port, on_exit) {
+        Ok(()) => return,
+        Err(on_exit) => on_exit,
+    };
     std::process::Command::new("cmdkey")
         .arg("/delete:localhost")
         .output()
@@ -55,6 +60,43 @@ fn run_rdp(port: u16, name: &str, on_exit: impl FnOnce() + Send + 'static) {
             let _ = (child, name, on_exit);
         }
         Err(err) => log::warn!("Failed to launch mstsc: {}", err),
+    }
+}
+
+// Seat tabs: show the session inside the RustDesk tab with rdp-view.exe
+// (next to rustdesk.exe) instead of a separate mstsc window. Gives `on_exit`
+// back when this is not a seat tab or the helper cannot start.
+#[cfg(windows)]
+fn run_rdp_view<F: FnOnce() + Send + 'static>(port: u16, on_exit: F) -> Result<(), F> {
+    let ctl = std::env::var("rdp_view_ctl").unwrap_or_default();
+    std::env::remove_var("rdp_view_ctl");
+    if ctl.is_empty() {
+        return Err(on_exit);
+    }
+    let Some(exe) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("rdp-view.exe")))
+        .filter(|p| p.exists())
+    else {
+        log::warn!("rdp-view.exe not found, using mstsc");
+        return Err(on_exit);
+    };
+    match std::process::Command::new(&exe)
+        .args(["--port", &port.to_string(), "--ctl", &ctl])
+        .spawn()
+    {
+        Ok(mut child) => {
+            log::info!("rdp-view started, pid {}", child.id());
+            std::thread::spawn(move || {
+                let _ = child.wait();
+                on_exit();
+            });
+            Ok(())
+        }
+        Err(err) => {
+            log::warn!("Failed to launch rdp-view: {}, using mstsc", err);
+            Err(on_exit)
+        }
     }
 }
 

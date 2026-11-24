@@ -28,10 +28,13 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../common.dart';
+import '../consts.dart';
 import 'formatter/id_formatter.dart';
 import '../models/model.dart';
 import '../models/platform_model.dart';
 import '../models/terminal_model.dart';
+import '../desktop/pages/computers_tab.dart';
+import '../utils/multi_window_manager.dart';
 
 class ChurchPowerConfig {
   final String url;
@@ -107,6 +110,30 @@ class ChurchPower {
     await bind.mainSetPeerOption(id: s.peer, key: 'rdp_username', value: user);
     await bind.mainSetPeerOption(id: s.peer, key: 'rdp_password', value: pass);
     return s.peer;
+  }
+
+  /// Main isolate: opens the seat's tab in the remote window (creating the
+  /// window if needed) and returns the control port rdp-view should call, or
+  /// 'open' when the seat's tab is already live, or null on failure.
+  static Future<String?> openSeatTab(ChurchSeat s) async {
+    final args = jsonEncode({'key': 'seat:${s.id}', 'name': s.name});
+    var r = await rustDeskWinManager.call(
+        WindowType.RemoteDesktop, kWindowOpenSeatTab, args);
+    if (r.windowId == kInvalidWindowId) {
+      await rustDeskWinManager.newRemoteDesktop(kComputersTabKey);
+      for (var i = 0; i < 17; i++) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        try {
+          r = await rustDeskWinManager.call(
+              WindowType.RemoteDesktop, kWindowOpenSeatTab, args);
+        } catch (_) {
+          continue;
+        }
+        if (r.result is String && (r.result as String).isNotEmpty) break;
+      }
+    }
+    final port = r.result;
+    return port is String && port.isNotEmpty ? port : null;
   }
 
   static String _clean(String id) => realId(id);

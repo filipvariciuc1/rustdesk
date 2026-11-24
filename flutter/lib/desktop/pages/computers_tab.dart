@@ -14,6 +14,9 @@ const kHomeTabScheme = 'rustdesk-church';
 const kHomeTabLink = 'rustdesk-church://home';
 const kWindowShowSettings = 'church_show_settings';
 const kWindowForwardEvent = 'church_forward_event';
+// Main -> tab window: open a seat's Remote Desktop as a tab, returns its
+// rdp-view control port ('open' if that tab is already live).
+const kWindowOpenSeatTab = 'church_open_seat_tab';
 
 const _forwardedEvents = [
   'load_recent_peers',

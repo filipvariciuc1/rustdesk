@@ -13,6 +13,7 @@ import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/desktop/pages/computers_tab.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/desktop/pages/remote_page.dart';
+import 'package:flutter_hbb/desktop/pages/seat_rdp_tab.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/desktop/widgets/material_mod_popup_menu.dart'
@@ -70,6 +71,11 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
     if (peerId != null) {
       if (peerId != kComputersTabKey) ConnectionTypeState.init(peerId!);
       tabController.onSelected = (id) {
+        if (isSeatTabKey(id)) {
+          WindowController.fromWindowId(params['windowId']).setTitle(
+              SeatRdpSession.all[id]?.name ?? getWindowName());
+          return;
+        }
         if (id == kComputersTabKey) {
           WindowController.fromWindowId(params['windowId'])
               .setTitle(getWindowName());
@@ -225,7 +231,8 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
         selectedBorderColor: MyTheme.accent,
         pageViewBuilder: (pageView) => pageView,
         labelGetter: DesktopTab.tablabelGetter,
-        tabBuilder: (key, icon, label, themeConf) => key == kComputersTabKey
+        tabBuilder: (key, icon, label, themeConf) => key == kComputersTabKey ||
+                isSeatTabKey(key)
             ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [icon, label])
             : Obx(() {
           final connectionType = ConnectionTypeState.find(key);
@@ -441,6 +448,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
   }
 
   void onRemoveId(String id) async {
+    SeatRdpSession.all[id]?.close();
     if (tabController.state.value.tabs.isEmpty) {
       // Keep calling until the window status is hidden.
       //
@@ -469,6 +477,37 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
 
   int windowId() {
     return widget.params["windowId"];
+  }
+
+  // A seat card (Casier / Secretar): its Remote Desktop, in a tab.
+  Future<String> _openSeatTab(Map<String, dynamic> args) async {
+    final String key = args['key'];
+    final String name = args['name'];
+    final port = await SeatRdpSession.open(key, name,
+        windowId: windowId(),
+        selected: () => tabController.state.value.selectedTabInfo.key == key,
+        ended: () => tabController.closeBy(key));
+    if (!tabController.jumpToByKey(key)) {
+      tabController.add(TabInfo(
+        key: key,
+        label: name,
+        selectedIcon: selectedIcon,
+        unselectedIcon: unselectedIcon,
+        onTabCloseButton: () => tabController.closeBy(key),
+        page: SeatRdpView(
+            key: ValueKey(key), session: SeatRdpSession.all[key]!),
+      ));
+      // Same as a picked PC: the seat replaces the New tab it came from.
+      Future.delayed(const Duration(milliseconds: 400), () {
+        final keys = tabController.state.value.tabs.map((t) => t.key);
+        if (keys.contains(kComputersTabKey) && keys.contains(key)) {
+          tabController.closeBy(kComputersTabKey);
+        }
+      });
+    }
+    _update_remote_count();
+    windowOnTop(windowId());
+    return port;
   }
 
   Future<bool> handleWindowCloseButton() async {
@@ -576,6 +615,8 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           tabController.closeBy(kComputersTabKey);
         }
       });
+    } else if (call.method == kWindowOpenSeatTab) {
+      return await _openSeatTab(jsonDecode(call.arguments));
     } else if (call.method == kWindowDisableGrabKeyboard) {
       // ???
     } else if (call.method == "onDestroy") {

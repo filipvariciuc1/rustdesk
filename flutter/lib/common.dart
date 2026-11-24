@@ -2562,7 +2562,8 @@ connectMainDesktop(String id,
     String? password,
     String? connToken,
     bool? isSharedPassword,
-    String loginMethod = ''}) async {
+    String loginMethod = '',
+    String? tabKey}) async {
   if (isFileTransfer) {
     await rustDeskWinManager.newFileTransfer(id,
         loginMethod: loginMethod,
@@ -2583,7 +2584,8 @@ connectMainDesktop(String id,
         password: password,
         isSharedPassword: isSharedPassword,
         connToken: connToken,
-        forceRelay: forceRelay);
+        forceRelay: forceRelay,
+        tabKey: tabKey);
   } else if (isTerminal) {
     await rustDeskWinManager.newTerminal(id,
         loginMethod: loginMethod,
@@ -2631,12 +2633,39 @@ connect(BuildContext context, String id,
   }
   id = id.replaceAll(' ', '');
   final seat = ChurchPower.seatFor(id);
+  // Both seats tunnel to the same NUC peer, so their tunnel tabs are keyed
+  // by seat, never by peer id (else the second seat is dropped as a dup).
+  String? tabKey;
   if (seat != null) {
+    tabKey = 'seat:${seat.id}';
     if (!isWindows) {
       showToast('${seat.name} opens with Remote Desktop, on Windows only.');
       return;
     }
+    // The tab must be opened by the main window (it owns the window
+    // manager), so a seat double-clicked in a tab window goes there first.
+    if (isDesktop && desktopType != DesktopType.main) {
+      await rustDeskWinManager.call(WindowType.Main, kWindowConnect, {
+        'id': seat.id,
+        'isFileTransfer': false,
+        'isViewCamera': false,
+        'isTerminal': false,
+        'isTcpTunneling': false,
+        'isRDP': true,
+        'forceRelay': forceRelay,
+        'loginMethod': '',
+      });
+      return;
+    }
     id = await ChurchPower.prepareSeat(seat);
+    if (isDesktop) {
+      // Show it inside a RustDesk tab (rdp-view), not in a mstsc window.
+      final ctl = await ChurchPower.openSeatTab(seat);
+      if (ctl == 'open') return;
+      if (ctl != null) {
+        await bind.mainSetPeerOption(id: id, key: 'rdp_view_ctl', value: ctl);
+      }
+    }
     isFileTransfer = isViewCamera = isTerminal = isTcpTunneling = false;
     isRDP = true;
   }
@@ -2659,6 +2688,7 @@ connect(BuildContext context, String id,
         password: password,
         isSharedPassword: isSharedPassword,
         forceRelay: forceRelay,
+        tabKey: tabKey,
       );
     } else {
       await rustDeskWinManager.call(WindowType.Main, kWindowConnect, {

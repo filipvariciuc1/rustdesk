@@ -231,6 +231,7 @@ class RustDeskMultiWindowManager {
     bool? isRDP,
     bool? isSharedPassword,
     String? connToken,
+    String? tabKey,
   }) async {
     var params = {
       "type": type.index,
@@ -249,6 +250,9 @@ class RustDeskMultiWindowManager {
     }
     if (connToken != null) {
       params['connToken'] = connToken;
+    }
+    if (tabKey != null) {
+      params['tabKey'] = tabKey;
     }
     if (loginMethod.isNotEmpty) {
       params['loginMethod'] = loginMethod;
@@ -344,6 +348,7 @@ class RustDeskMultiWindowManager {
     bool? isSharedPassword,
     bool? forceRelay,
     String? connToken,
+    String? tabKey,
   }) async {
     return await newSession(
       WindowType.PortForward,
@@ -356,6 +361,7 @@ class RustDeskMultiWindowManager {
       isRDP: isRDP,
       isSharedPassword: isSharedPassword,
       connToken: connToken,
+      tabKey: tabKey,
     );
   }
 
