@@ -2732,6 +2732,55 @@ pub fn wide_string(s: &str) -> Vec<u16> {
         .collect()
 }
 
+// mstsc reaches the peer through "localhost", so the peer's self-signed RDP
+// certificate always raises "The identity of the remote computer cannot be
+// verified". The RustDesk tunnel has already authenticated the peer, so for the
+// mstsc we launch we turn that warning off, then put the user's own setting
+// back once the connection has had time to start (tunnel retries included).
+pub fn rdp_skip_cert_warning(secs: u64) {
+    use std::sync::Mutex;
+    const KEY: &str = r"Software\Microsoft\Terminal Server Client";
+    const VALUE: &str = "AuthenticationLevelOverride";
+    // (launches still waiting, the user's value before the first of them)
+    static STATE: Mutex<(u32, Option<Option<u32>>)> = Mutex::new((0, None));
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    {
+        let mut st = STATE.lock().unwrap();
+        let key = match hkcu.create_subkey(KEY) {
+            Ok((key, _)) => key,
+            Err(err) => {
+                log::warn!("rdp: cannot open {}: {}", KEY, err);
+                return;
+            }
+        };
+        if st.0 == 0 {
+            st.1 = Some(key.get_value::<u32, _>(VALUE).ok());
+        }
+        if let Err(err) = key.set_value(VALUE, &0u32) {
+            log::warn!("rdp: cannot set {}: {}", VALUE, err);
+            return;
+        }
+        st.0 += 1;
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(secs));
+        let mut st = STATE.lock().unwrap();
+        st.0 = st.0.saturating_sub(1);
+        if st.0 > 0 {
+            return;
+        }
+        if let Ok(key) = RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(KEY, KEY_SET_VALUE) {
+            let res = match st.1.take().flatten() {
+                Some(old) => key.set_value(VALUE, &old),
+                None => key.delete_value(VALUE),
+            };
+            if let Err(err) = res {
+                log::warn!("rdp: cannot restore {}: {}", VALUE, err);
+            }
+        }
+    });
+}
+
 // This only changes mstsc's top-level window title. The full-screen connection
 // bar is rendered separately and cannot be customized when mstsc.exe is
 // launched as an independent process.

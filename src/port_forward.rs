@@ -36,6 +36,8 @@ fn run_rdp(port: u16, name: &str) {
             .output()
             .ok();
     }
+    #[cfg(windows)]
+    crate::platform::rdp_skip_cert_warning(90);
     // Keep using /v instead of a generated .rdp file: mstsc then preserves the
     // user's Default.rdp settings and avoids unsigned-file warnings or policies.
     match std::process::Command::new("mstsc")
@@ -49,6 +51,47 @@ fn run_rdp(port: u16, name: &str) {
             let _ = (child, name);
         }
         Err(err) => log::warn!("Failed to launch mstsc: {}", err),
+    }
+}
+
+type StartOutcome = (
+    (Stream, bool, Option<Vec<u8>>, Option<crate::kcp_stream::KcpStream>, &'static str),
+    (i32, String),
+);
+
+// The public rendezvous server sometimes does not answer for a while ("Failed
+// to connect to rs-ny...: Please try later"). The local app (mstsc) is already
+// waiting on the socket, so try again a few times before the tunnel gives up.
+async fn start_with_retry(
+    id: &str,
+    key: &str,
+    token: &str,
+    conn_type: ConnType,
+    interface: impl Interface,
+) -> ResultType<StartOutcome> {
+    const TRIES: u32 = 3;
+    let mut tried = 0;
+    // Test switch: CHURCH_TEST_TUNNEL_STALL=<secs> makes the first try of each
+    // tunnel wait that long and then fail like the rendezvous server timing out.
+    let stall = std::env::var("CHURCH_TEST_TUNNEL_STALL")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok());
+    loop {
+        tried += 1;
+        if tried == 1 {
+            if let Some(secs) = stall {
+                tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+                log::warn!("tunnel to {} try 1/{} failed: test stall {}s; trying again", id, TRIES, secs);
+                continue;
+            }
+        }
+        match Client::start(id, key, token, conn_type, interface.clone()).await {
+            Err(err) if tried < TRIES && err.to_string().starts_with("Failed") => {
+                log::warn!("tunnel to {} try {}/{} failed: {}; trying again", id, tried, TRIES, err);
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            res => return res,
+        }
     }
 }
 
@@ -176,7 +219,7 @@ async fn connect_and_login(
         ConnType::PORT_FORWARD
     };
     let ((mut stream, direct, pk, kcp, _stream_type), (feedback, rendezvous_server)) =
-        Client::start(id, key, token, conn_type, interface.clone()).await?;
+        start_with_retry(id, key, token, conn_type, interface.clone()).await?;
     let mut trust = crate::trusted_devices::client::Session::new(
         &interface.get_lch().read().unwrap(), stream.is_secured(), pk.as_deref())?;
     interface.update_direct(Some(direct));
@@ -429,7 +472,7 @@ async fn connect_and_login_mux(
         ConnType::PORT_FORWARD
     };
     let ((mut stream, direct, pk, kcp, _stream_type), (feedback, rendezvous_server)) =
-        Client::start(id, key, token, conn_type, interface.clone()).await?;
+        start_with_retry(id, key, token, conn_type, interface.clone()).await?;
     let mut trust = crate::trusted_devices::client::Session::new(
         &interface.get_lch().read().unwrap(), stream.is_secured(), pk.as_deref())?;
     interface.update_direct(Some(direct));
