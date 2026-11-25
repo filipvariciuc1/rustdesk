@@ -283,6 +283,7 @@ namespace RdpView
                 ocx.DesktopWidth = sessionSize.Width; ocx.DesktopHeight = sessionSize.Height;
                 ocx.ColorDepth = 32;
                 var adv = ocx.AdvancedSettings9;
+                try { adv.PerformanceFlags = 0x180; } catch (Exception ex) { Log.W("PerformanceFlags failed " + ex.Message); } // desktop composition + font smoothing (see-through taskbar)
                 adv.RDPPort = port;
                 adv.EnableCredSspSupport = true;
                 adv.AuthenticationLevel = 0; // localhost tunnel: the name never matches the NUC's certificate
