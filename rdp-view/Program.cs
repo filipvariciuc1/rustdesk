@@ -290,6 +290,8 @@ namespace RdpView
                 adv.RedirectPrinters = false; adv.RedirectDrives = false; adv.RedirectSmartCards = false; adv.RedirectPorts = false;
                 adv.RedirectClipboard = true;
                 adv.SmartSizing = false;
+                // Win+E, Alt+Tab and the like go to the seat, not this PC (mstsc "On the remote computer").
+                try { ocx.SecuredSettings3.KeyboardHookMode = 1; } catch (Exception ex) { Log.W("KeyboardHookMode failed " + ex.Message); }
                 if (pass.Length > 0)
                 {
                     ((IMsRdpClientNonScriptable)ocx).put_ClearTextPassword(pass);
