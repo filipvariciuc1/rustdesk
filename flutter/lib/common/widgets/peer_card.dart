@@ -601,9 +601,6 @@ abstract class BasePeerCard extends StatelessWidget {
     }
     if (ChurchPower.plugFor(peer.id) != null) {
       menuItems.add(_churchPowerAction('Power on', ChurchPower.powerOn));
-      if (isDesktop) {
-        menuItems.add(_churchPowerAction('Power off', ChurchPower.powerOff));
-      }
     }
     menuItems.add(MenuEntryDivider<String>());
     menuItems.add(_requestApprovalAction(context));
