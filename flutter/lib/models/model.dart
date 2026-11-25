@@ -899,7 +899,12 @@ class FfiModel with ChangeNotifier {
     // window, so show it.
     if (parent.target?.connType == ConnType.portForward) {
       if (type == 'rdp-closed') {
-        closeConnection(id: peerId);
+        final cb = parent.target?.onRdpClosed;
+        if (cb != null) {
+          cb();
+        } else {
+          closeConnection(id: peerId);
+        }
         return;
       }
       if (stateGlobal.windowId >= 0) {
@@ -4057,6 +4062,10 @@ class FFI {
   var version = '';
   var connType = ConnType.defaultConn;
   var closed = false;
+
+  /// Seat RDP tunnel tabs are keyed by seat, not peer id: the tab page sets
+  /// this to close its own tab when the desktop closes ('rdp-closed').
+  void Function()? onRdpClosed;
 
   /// dialogManager use late to ensure init after main page binding [globalKey]
   late final dialogManager = OverlayDialogManager();

@@ -25,6 +25,8 @@ class _PortForwardTabPageState extends State<PortForwardTabPage> {
   late final bool isRDP;
   // Seat RDP sessions started here, by tab key (see PortForwardPage.preStartedFfi).
   final Map<String, FFI> _rdpFfis = {};
+  // Bumped each time a leftover seat tunnel tab is replaced.
+  int _pageGen = 0;
 
   static const IconData selectedIcon = Icons.forward_sharp;
   static const IconData unselectedIcon = Icons.forward_outlined;
@@ -74,6 +76,14 @@ class _PortForwardTabPageState extends State<PortForwardTabPage> {
         isRdp: true);
     Get.put<FFI>(ffi, tag: 'pf_$tabKey');
     _rdpFfis[tabKey] = ffi;
+    // Seat tunnel tabs are keyed by seat, not by peer id: when the desktop
+    // closes, close this tab by its own key (see FFI.onRdpClosed).
+    ffi.onRdpClosed = () {
+      if (_rdpFfis[tabKey] != ffi) return; // replaced by a newer tunnel
+      if (tabController.state.value.tabs.any((e) => e.key == tabKey)) {
+        tabController.closeBy(tabKey);
+      }
+    };
     return ffi;
   }
 
@@ -101,8 +111,18 @@ class _PortForwardTabPageState extends State<PortForwardTabPage> {
         if (tabController.state.value.tabs
                 .indexWhere((e) => e.key == tabKey) >=
             0) {
-          debugPrint("port forward $tabKey exists");
-          return;
+          if (isRDP != true || !_rdpFfis.containsKey(tabKey)) {
+            debugPrint("port forward $tabKey exists");
+            return;
+          }
+          // Main only asks for a seat tunnel when that seat's desktop is not
+          // open, so this tab is a leftover: drop it and start a fresh one.
+          // Not closeBy: it closes this window when it is the last tab.
+          debugPrint("port forward $tabKey is a leftover, replacing it");
+          _closeRdp(tabKey);
+          tabController.state.value.tabs.removeWhere((e) => e.key == tabKey);
+          tabController.state.refresh();
+          _pageGen++;
         }
         final preFfi = _startRdp(tabKey, args);
         tabController.add(TabInfo(
@@ -111,7 +131,9 @@ class _PortForwardTabPageState extends State<PortForwardTabPage> {
             selectedIcon: selectedIcon,
             unselectedIcon: unselectedIcon,
             page: PortForwardPage(
-              key: ValueKey(tabKey),
+              // A replaced leftover gets a new key, so its old page state
+              // (holding the dead session) is not reused.
+              key: ValueKey(_pageGen == 0 ? tabKey : '$tabKey#$_pageGen'),
               id: id,
               tabKey: tabKey,
               password: args['password'],

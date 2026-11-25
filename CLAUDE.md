@@ -34,4 +34,5 @@
 - Do not reuse `set_rdp_window_title` for rdp-view (it renames the child's windows).
 - rdp-view must be an owned popup (`WS_POPUP` + `GWLP_HWNDPARENT`), never a child window: Flutter's swap chain paints over child windows.
 - Both seats share NUC peer `190681964`: port-forward tabs (and their `pf_` Get tags) are keyed by seat (`tabKey` = `seat:<id>`), never by peer id, or the second seat is dropped as "port forward exists".
+- `rdp-closed` must close the tunnel tab by its seat key (`FFI.onRdpClosed`), never `closeConnection(peerId)`: else the tab stays and the next open is dropped as "exists". Always test open, close, open again: a fork restart hides this once.
 - `rustDeskWinManager` is main-isolate only: a seat double-clicked in a tab window forwards `kWindowConnect` to main, which runs `connect()` there.
